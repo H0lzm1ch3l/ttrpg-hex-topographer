@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+.tilecache/
+assets/.prescreen-cache/
+assets/*.geojson
+assets/prescreen.npz

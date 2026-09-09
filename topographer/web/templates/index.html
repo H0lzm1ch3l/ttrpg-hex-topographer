@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Topographer</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Topographer</h1>
+      <p class="tagline">Grow a hexcrawl map, one real 6-mile hex at a time.</p>
+    </header>
+
+    <div class="layout">
+      <div class="map-wrap">
+        <div class="hexmap" style="width:{{ map_width }}px; height:{{ map_height }}px;">
+          {% for h in map_hexes %}
+            <img class="map-hex{% if not h.locked %} current{% endif %}"
+                 src="{{ url_for('roll.tile_png', tile_id=h.tile_id) }}"
+                 style="left:{{ h.left }}px; top:{{ h.top }}px; width:{{ hex_w }}px; height:{{ hex_h }}px;"
+                 alt="{{ 'locked hex' if h.locked else 'current hex' }}">
+          {% endfor %}
+
+          <form class="edge-buttons">
+            {% for a in edge_anchors %}
+              <button type="submit" formmethod="post" formaction="{{ url_for('roll.click_edge', edge=a.edge) }}"
+                      class="edge-btn" style="left:{{ a.left }}px; top:{{ a.top }}px;"
+                      title="grow toward {{ directions[a.edge] }}">{{ directions[a.edge] }}</button>
+            {% endfor %}
+          </form>
+        </div>
+        <p class="edge-hint">Click a direction to lock the current hex in and step to its real-world neighbour there.</p>
+      </div>
+
+      <aside class="hex-info">
+        <h2>{{ tile.terrain_class }}{% if tile.secondary_class %} <span class="secondary">({{ tile.secondary_class }})</span>{% endif %}</h2>
+
+        <dl class="stats">
+          <dt>Location</dt>
+          <dd>{{ "%.4f"|format(tile.lat) }}, {{ "%.4f"|format(tile.lon) }}</dd>
+
+          <dt>Elevation</dt>
+          <dd>{{ tile.stats.elev_min|round|int }}&ndash;{{ tile.stats.elev_max|round|int }} m
+            <span class="muted">(mean {{ tile.stats.elev_mean|round|int }})</span></dd>
+
+          <dt>Relief</dt>
+          <dd>{{ tile.stats.relief|round|int }} m</dd>
+
+          <dt>Slope</dt>
+          <dd>mean {{ "%.1f"|format(tile.stats.slope_mean) }}&deg;
+            <span class="muted">(p85 {{ "%.1f"|format(tile.stats.slope_p85) }}&deg;)</span></dd>
+
+          <dt>Aspect</dt>
+          <dd>{{ tile.stats.aspect_deg|round|int }}&deg;</dd>
+        </dl>
+
+        <p class="roll-position">Roll {{ seq_index }} of {{ seq_count }}</p>
+
+        <div class="controls">
+          <form method="post" action="{{ url_for('roll.back') }}">
+            <button type="submit" {% if not can_back %}disabled{% endif %}>&larr; Back</button>
+          </form>
+          <form method="post" action="{{ url_for('roll.forward') }}">
+            <button type="submit" {% if not can_forward %}disabled{% endif %}>Forward &rarr;</button>
+          </form>
+          <form method="post" action="{{ url_for('roll.roll') }}">
+            <button type="submit" class="primary">Reroll</button>
+          </form>
+        </div>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>

@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: topographer
+Version: 0.1.0
+Summary: Real-world topography as 6-mile hexcrawl tiles
+Requires-Python: >=3.10
+Requires-Dist: numpy>=1.24
+Requires-Dist: pillow>=10.0
+Requires-Dist: requests>=2.31
+Requires-Dist: pyproj>=3.6
+Requires-Dist: shapely>=2.0
+Requires-Dist: flask>=3.0
+Provides-Extra: dev
+Requires-Dist: pytest>=7.4; extra == "dev"
