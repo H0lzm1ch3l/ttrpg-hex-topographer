@@ -29,14 +29,42 @@ class GeoTiffDem:
     """Any north-up GeoTIFF in EPSG:4326 -- what OpenTopography's global DEM
     API returns for COP30/SRTM/NASADEM."""
 
-    def __init__(self, path: str):
+    def __init__(self, path: str, nearest: bool = False, bbox=None, pad: float = 0.02):
+        """``nearest`` is mandatory for class rasters such as WorldCover:
+        interpolating between class codes 10 (tree) and 30 (grass) would invent
+        code 20 (shrub) along every boundary.
+
+        ``bbox`` reads only the window covering (W, S, E, N) instead of the whole
+        band. This is not an optimisation but a requirement for WorldCover: its
+        tiles are 3 x 3 degrees at 10 m, so a full band is 36000 x 36000 cells
+        and 5 GB as float32 -- reading one is an immediate out-of-memory kill.
+        The files are COGs precisely so that a window can be read cheaply.
+        """
         import rasterio
 
+        self.nearest = nearest
         self.path = path
         self.src = rasterio.open(path)
         self.name = f"GeoTIFF {path}"
-        self.band = self.src.read(1, masked=True).filled(np.nan).astype(np.float32)
-        self.inv = ~self.src.transform
+
+        transform = self.src.transform
+        window = None
+        if bbox is not None:
+            from rasterio.windows import from_bounds
+
+            w, s_, e, n = bbox
+            b = self.src.bounds
+            w, s_ = max(w - pad, b.left), max(s_ - pad, b.bottom)
+            e, n = min(e + pad, b.right), min(n + pad, b.top)
+            if e > w and n > s_:
+                window = from_bounds(w, s_, e, n, self.src.transform)
+                transform = self.src.window_transform(window)
+
+        # Cast before filling: WorldCover is uint8 and a NaN fill value cannot
+        # be represented in an integer masked array.
+        band = self.src.read(1, masked=True, window=window)
+        self.band = band.astype(np.float32).filled(np.nan)
+        self.inv = ~transform
         if self.src.crs is not None and self.src.crs.to_epsg() not in (4326, None):
             raise ValueError(
                 f"expected EPSG:4326, got {self.src.crs}. Reproject first: "
@@ -49,6 +77,8 @@ class GeoTiffDem:
 
     def sample(self, lon: np.ndarray, lat: np.ndarray) -> np.ndarray:
         cols, rows = self.inv * (np.asarray(lon), np.asarray(lat))
+        if self.nearest:
+            return _nearest(self.band, np.asarray(rows), np.asarray(cols))
         return _bilinear(self.band, np.asarray(rows), np.asarray(cols))
 
 
@@ -100,6 +130,15 @@ class SyntheticIslandDem:
 
         h = np.where(land > 0, land * 260 + ridge ** 1.6 * self.peak * rough, land * 60)
         return h.astype(np.float32)
+
+
+def _nearest(arr: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:
+    h, w = arr.shape
+    r = np.clip(np.round(rows).astype(np.int64), 0, h - 1)
+    c = np.clip(np.round(cols).astype(np.int64), 0, w - 1)
+    out = arr[r, c].astype(np.float32)
+    outside = (rows < -1) | (rows > h) | (cols < -1) | (cols > w)
+    return np.where(outside, np.nan, out)
 
 
 def _bilinear(arr: np.ndarray, rows: np.ndarray, cols: np.ndarray) -> np.ndarray:

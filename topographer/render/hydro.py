@@ -54,7 +54,8 @@ SLUGGISH_SLOPE_DEG = 2.0     # below this it wanders and the ground is wet
 
 @dataclass
 class Drainage:
-    acc_km2: np.ndarray      # catchment area draining through each cell
+    acc_km2: np.ndarray      # D8 catchment area -- for channels
+    acc_wet: np.ndarray      # D-infinity accumulation in cells -- for wetness
     order: np.ndarray        # 0 = not a channel, 1-4 = size band
     channel: np.ndarray      # bool
     slope_deg: np.ndarray
@@ -66,6 +67,7 @@ class Reach:
     pts: np.ndarray          # (N, 2) as (row, col) on the working grid
     band: int
     slope_deg: float
+    acc_km2: np.ndarray | None = None   # catchment at each point
 
     @property
     def kind(self) -> str:
@@ -90,8 +92,18 @@ def extract(elev: np.ndarray, slope_deg: np.ndarray, cell_m: float,
     raster = Raster(e, viewfinder=vf)
 
     inflated = grid.resolve_flats(grid.fill_depressions(grid.fill_pits(raster)))
+
+    # Two routings, deliberately. D8 sends all flow to one neighbour, which is
+    # what you want for a channel -- it produces a clean single-cell network.
+    # It is the wrong choice for wetness: TWI built on D8 comes out in threads
+    # rather than patches (measured: a 20% mire mask collapses to 2.6% under a
+    # 3x3 opening, because most of it is one cell wide). D-infinity divides flow
+    # between two downslope neighbours and gives coherent wet areas.
     fdir = grid.flowdir(inflated)
     acc_cells = np.asarray(grid.accumulation(fdir), dtype=np.float64)
+
+    fdir_inf = grid.flowdir(inflated, routing="dinf")
+    acc_wet = np.asarray(grid.accumulation(fdir_inf, routing="dinf"), dtype=np.float64)
 
     km2_per_cell = (cell_m / 1000.0) ** 2
     acc_km2 = acc_cells * km2_per_cell
@@ -103,7 +115,7 @@ def extract(elev: np.ndarray, slope_deg: np.ndarray, cell_m: float,
     for i, lo in enumerate(ORDER_BANDS_KM2):
         order[channel & (acc_km2 >= lo)] = i + 1
 
-    return Drainage(acc_km2=acc_km2, order=order, channel=channel,
+    return Drainage(acc_km2=acc_km2, acc_wet=acc_wet, order=order, channel=channel,
                     slope_deg=slope_deg, cell_m=cell_m)
 
 
@@ -130,6 +142,7 @@ def trace(dr: Drainage, min_cells: int = 6) -> list[Reach]:
                     out.append(Reach(
                         pts=path, band=band,
                         slope_deg=float(np.nanmean(dr.slope_deg[idx[:, 0], idx[:, 1]])),
+                        acc_km2=dr.acc_km2[idx[:, 0], idx[:, 1]].copy(),
                     ))
     return out
 
